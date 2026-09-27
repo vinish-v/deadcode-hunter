@@ -2,7 +2,7 @@
   "name": "deadcode-hunter",
   "displayName": "DeadCode Hunter by Vinish",
   "description": "Safely hunt and clean orphan JS/TS code, unreferenced media, and ghost npm dependencies.",
-  "version": "1.0.2",
+  "version": "1.0.3",
   "publisher": "vinish",
   "icon": "resources/icon.png",
   "license": "MIT",
@@ -67,10 +67,7 @@
       ]
     }
   },
-  "dependencies": {
-    "cors": "^2.8.5",
-    "express": "^4.18.2"
-  },
+  "dependencies": {},
   "devDependencies": {
     "@types/vscode": "^1.85.0"
   }
