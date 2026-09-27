@@ -227,8 +227,7 @@ function getHtmlForWebview(webview, extensionUri) {
             </script>
         `;
 
-        html = html.replace('<head>', `<head>\n    ${baseHref}\n    ${cspMeta}\n    ${styleReset}`);
-        html = html.replace('</head>', `    ${scriptInjection}\n</head>`);
+        html = html.replace('<head>', `<head>\n    ${scriptInjection}\n    ${baseHref}\n    ${cspMeta}\n    ${styleReset}`);
         return html;
     }
 

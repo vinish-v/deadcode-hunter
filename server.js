@@ -331,8 +331,12 @@ const server = http.createServer(async (req, res) => {
     // 2. Scan workspace
     if (url === '/scan' && req.method === 'POST') {
         const body = await parseJsonBody(req);
-        const targetDirInput = body?.target_dir || '.';
+        const targetDirInput = body?.target_dir;
+        if (!targetDirInput || targetDirInput === '.') {
+            return sendJson(res, 400, { error: "No target_dir provided. Please specify a workspace directory to scan." });
+        }
         const rootPath = path.resolve(targetDirInput);
+        console.log(`[DeadCode Server] Scanning workspace: ${rootPath}`);
 
         if (!fs.existsSync(rootPath)) {
             return sendJson(res, 400, { error: `Directory not found: ${rootPath}` });
@@ -661,7 +665,10 @@ const server = http.createServer(async (req, res) => {
         const pathsToDelete = body?.paths || [];
         const useTrash = body?.use_trash !== false;
         const createBackup = Boolean(body?.create_backup);
-        const targetDirInput = body?.target_dir || '.';
+        const targetDirInput = body?.target_dir;
+        if (!targetDirInput || targetDirInput === '.') {
+            return sendJson(res, 400, { error: "No target_dir provided for deletion." });
+        }
         const rootPath = path.resolve(targetDirInput);
 
         if (!Array.isArray(pathsToDelete) || pathsToDelete.length === 0) {
