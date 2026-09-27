@@ -1,0 +1,8 @@
+node_modules/
+webview-ui/node_modules/
+venv/
+.venv/
+dist/
+webview-ui/dist/
+*.log
+.DS_Store

@@ -1,0 +1,13 @@
+.vscode/**
+webview-ui/node_modules/**
+webview-ui/src/**
+venv/**
+.git/**
+*.log
+src/legacy/**
+src/components/deprecated/**
+src/services/**
+src/helpers/**
+src/hooks/**
+src/unused/**
+assets/**

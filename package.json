@@ -1,0 +1,68 @@
+{
+  "name": "deadcode-hunter",
+  "displayName": "DeadCode Hunter by Vinish",
+  "description": "Safely hunt and clean orphan JS/TS code, unreferenced media, and ghost npm dependencies.",
+  "version": "1.0.0",
+  "publisher": "vinish",
+  "icon": "resources/icon.png",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/vinish/deadcode-hunter"
+  },
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "main": "./extension.js",
+  "scripts": {
+    "server": "node server.js",
+    "ui:dev": "cd webview-ui && npm run dev",
+    "ui:build": "cd webview-ui && npm run build"
+  },
+  "activationEvents": [
+    "onCommand:deadcode-hunter.openBeside",
+    "onView:deadcode-hunter.sidebarView",
+    "onView:deadcode-hunter.explorerView"
+  ],
+  "contributes": {
+    "commands": [
+      {
+        "command": "deadcode-hunter.openBeside",
+        "title": "DeadCode Hunter by Vinish: Open on Right Side",
+        "icon": "$(trash)"
+      }
+    ],
+    "viewsContainers": {
+      "activitybar": [
+        {
+          "id": "deadcode-hunter-container",
+          "title": "DeadCode Hunter by Vinish",
+          "icon": "resources/icon.svg"
+        }
+      ]
+    },
+    "views": {
+      "deadcode-hunter-container": [
+        {
+          "type": "webview",
+          "id": "deadcode-hunter.sidebarView",
+          "name": "DeadCode Checklist"
+        }
+      ],
+      "explorer": [
+        {
+          "type": "webview",
+          "id": "deadcode-hunter.explorerView",
+          "name": "DeadCode Hunter by Vinish"
+        }
+      ]
+    }
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "express": "^4.18.2"
+  },
+  "devDependencies": {
+    "@types/vscode": "^1.85.0"
+  }
+}
