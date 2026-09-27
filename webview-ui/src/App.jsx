@@ -105,14 +105,29 @@ export default function App() {
     }
   };
 
+  const postToVsCode = (msg) => {
+    try {
+      if (window.vscodeApi && window.vscodeApi.postMessage) {
+        window.vscodeApi.postMessage(msg);
+        return;
+      }
+      if (typeof acquireVsCodeApi === 'function') {
+        window.vscodeApi = acquireVsCodeApi();
+        window.vscodeApi.postMessage(msg);
+        return;
+      }
+      if (window.parent && window.parent !== window) {
+        window.parent.postMessage(msg, '*');
+      }
+    } catch (e) {}
+  };
+
   // Open file in VS Code editor via native postMessage bridge + fallback
   const openFileInEditor = async (filePath) => {
     if (!filePath || filePath.startsWith('pkg:')) return;
     
     // 1. Native VS Code message bridge (instant, in-editor tab)
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ command: 'openFile', path: filePath }, '*');
-    }
+    postToVsCode({ command: 'openFile', path: filePath });
 
     // 2. Also notify backend
     try {
@@ -230,9 +245,7 @@ export default function App() {
       Array.from(selectedPaths).map(p => `- ${p}`).join('\n');
 
     // 1. Send native postMessage to VS Code Host
-    if (window.parent && window.parent !== window) {
-      window.parent.postMessage({ command: 'copy', text: text }, '*');
-    }
+    postToVsCode({ command: 'copy', text: text });
 
     // 2. Clipboard API + Textarea fallback
     let copied = false;

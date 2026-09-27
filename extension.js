@@ -1,12 +1,46 @@
 const vscode = require('vscode');
 const path = require('path');
 const fs = require('fs');
+const http = require('http');
+const { fork } = require('child_process');
+
+let serverProcess = null;
+
+/**
+ * Ensures backend server.js is running on port 8000
+ */
+function ensureServerRunning(context) {
+    const req = http.get('http://localhost:8000/', (res) => {
+        console.log('[DeadCode Hunter] Backend already active on port 8000');
+    });
+
+    req.on('error', () => {
+        console.log('[DeadCode Hunter] Launching backend server.js on port 8000...');
+        try {
+            const serverScript = path.join(context.extensionUri.fsPath, 'server.js');
+            if (fs.existsSync(serverScript)) {
+                serverProcess = fork(serverScript, [], {
+                    cwd: context.extensionUri.fsPath,
+                    silent: true,
+                    env: { ...process.env, PORT: '8000' }
+                });
+                serverProcess.stdout?.on('data', (d) => console.log(`[DeadCode Server] ${d}`));
+                serverProcess.stderr?.on('data', (d) => console.error(`[DeadCode Server Err] ${d}`));
+            }
+        } catch (err) {
+            console.error('[DeadCode Hunter] Failed to start backend engine:', err);
+        }
+    });
+}
 
 /**
  * Activates the VS Code extension shell.
  */
 function activate(context) {
     console.log('DeadCode Hunter Extension Activated!');
+
+    // Start background scanning engine if not already running
+    ensureServerRunning(context);
 
     // Handler for messages from webview (open file, copy to clipboard)
     const handleWebviewMessage = async (message) => {
@@ -56,22 +90,56 @@ function activate(context) {
     const openBesideCommand = vscode.commands.registerCommand('deadcode-hunter.openBeside', () => {
         const panel = vscode.window.createWebviewPanel(
             'deadcodeHunterPanel',
-            'DeadCode Hunter',
+            'DeadCode Hunter by Vinish',
             vscode.ViewColumn.Beside,
             {
                 enableScripts: true,
-                retainContextWhenHidden: true
+                retainContextWhenHidden: true,
+                localResourceRoots: [
+                    context.extensionUri,
+                    vscode.Uri.file(path.join(context.extensionUri.fsPath, 'webview-ui', 'dist'))
+                ]
             }
         );
 
-        panel.webview.html = getHtmlForWebview();
+        panel.webview.html = getHtmlForWebview(panel.webview, context.extensionUri);
         panel.webview.onDidReceiveMessage(handleWebviewMessage);
     });
 
     context.subscriptions.push(openBesideCommand);
 }
 
-function getHtmlForWebview() {
+function getHtmlForWebview(webview, extensionUri) {
+    const distPath = path.join(extensionUri.fsPath, 'webview-ui', 'dist');
+    const indexPath = path.join(distPath, 'index.html');
+
+    if (fs.existsSync(indexPath)) {
+        let html = fs.readFileSync(indexPath, 'utf8');
+
+        // Rewrite relative asset paths to VS Code webview URIs
+        html = html.replace(/(href|src)="\/?(assets\/[^"]+)"/g, (match, attr, rel) => {
+            const fileUri = vscode.Uri.file(path.join(distPath, rel));
+            return `${attr}="${webview.asWebviewUri(fileUri)}"`;
+        });
+
+        html = html.replace(/src="\/?(logo\.png)"/g, (match, rel) => {
+            const fileUri = vscode.Uri.file(path.join(distPath, rel));
+            return `src="${webview.asWebviewUri(fileUri)}"`;
+        });
+
+        // Inject script for native VS Code API bridge
+        const scriptInjection = /* html */ `
+            <script>
+                try {
+                    window.vscodeApi = acquireVsCodeApi();
+                } catch(e) {}
+            </script>
+        `;
+        html = html.replace('</head>', `${scriptInjection}</head>`);
+        return html;
+    }
+
+    // Dev fallback if dist is missing
     return /* html */ `
         <!DOCTYPE html>
         <html lang="en">
@@ -98,11 +166,8 @@ function getHtmlForWebview() {
                 style="width: 100vw; height: 100vh; border: none;"
                 allow="clipboard-read; clipboard-write;"
             ></iframe>
-
             <script>
                 const vscode = acquireVsCodeApi();
-
-                // Forward messages from React iframe to VS Code extension host
                 window.addEventListener('message', (event) => {
                     if (event.data && typeof event.data === 'object') {
                         vscode.postMessage(event.data);
@@ -122,10 +187,14 @@ class DeadCodeSidebarProvider {
 
     resolveWebviewView(webviewView) {
         webviewView.webview.options = {
-            enableScripts: true
+            enableScripts: true,
+            localResourceRoots: [
+                this._extensionUri,
+                vscode.Uri.file(path.join(this._extensionUri.fsPath, 'webview-ui', 'dist'))
+            ]
         };
 
-        webviewView.webview.html = getHtmlForWebview();
+        webviewView.webview.html = getHtmlForWebview(webviewView.webview, this._extensionUri);
 
         if (this._messageHandler) {
             webviewView.webview.onDidReceiveMessage(this._messageHandler);
@@ -133,7 +202,13 @@ class DeadCodeSidebarProvider {
     }
 }
 
-function deactivate() {}
+function deactivate() {
+    if (serverProcess) {
+        try {
+            serverProcess.kill();
+        } catch {}
+    }
+}
 
 module.exports = {
     activate,
