@@ -129,9 +129,10 @@ function getHtmlForWebview(webview, extensionUri) {
             return `${attr}="${webview.asWebviewUri(fileUri)}"`;
         });
 
-        // Inject base href and CSP to safely load scripts and fetch localhost backend engine
+        // Inject base href, CSP, and full reset styles to eliminate any border/margin gaps
         const baseHref = `<base href="${distUri}/">`;
         const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval'; img-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource}; connect-src http://localhost:8000 http://127.0.0.1:8000 ws://localhost:* ws://127.0.0.1:*;">`;
+        const styleReset = `<style>html, body, #root { margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 100% !important; background-color: #171717 !important; overflow-x: hidden !important; }</style>`;
 
         // Inject script for native VS Code API bridge
         const scriptInjection = /* html */ `
@@ -142,7 +143,7 @@ function getHtmlForWebview(webview, extensionUri) {
             </script>
         `;
 
-        html = html.replace('<head>', `<head>\n    ${baseHref}\n    ${cspMeta}`);
+        html = html.replace('<head>', `<head>\n    ${baseHref}\n    ${cspMeta}\n    ${styleReset}`);
         html = html.replace('</head>', `    ${scriptInjection}\n</head>`);
         return html;
     }

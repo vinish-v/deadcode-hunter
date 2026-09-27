@@ -1,4 +1,5 @@
 import React, { useState } from 'react';
+import logoImg from './logo.png';
 import { 
   RefreshCw, 
   Trash2, 
@@ -452,12 +453,12 @@ export default function App() {
   const totalFilteredCount = filteredOrphanCode.length + filteredUnusedMedia.length + filteredUnusedDeps.length;
 
   return (
-    <div className="min-h-screen bg-[#171717] text-[#ececec] font-sans antialiased text-[13px] flex flex-col p-4 select-none">
+    <div className="min-h-screen w-full bg-[#171717] text-[#ececec] font-sans antialiased text-[13px] flex flex-col p-4 select-none box-border">
       {/* Top Header */}
       <header className="flex items-center justify-between pb-3.5 mb-3 border-b border-[#262626]">
         <div className="flex items-center space-x-2.5">
           <img 
-            src="/logo.png" 
+            src={logoImg} 
             alt="DeadCode Hunter Logo" 
             className="w-5 h-5 rounded-md object-cover border border-zinc-700/80 shadow-xs shrink-0" 
           />
