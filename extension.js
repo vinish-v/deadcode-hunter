@@ -5,31 +5,86 @@ const http = require('http');
 const { fork } = require('child_process');
 
 let serverProcess = null;
+const activeWebviews = new Set();
+
+/**
+ * Returns currently active workspace root and name
+ */
+function getCurrentWorkspace() {
+    const folders = vscode.workspace.workspaceFolders;
+    if (folders && folders.length > 0) {
+        return {
+            root: folders[0].uri.fsPath,
+            name: folders[0].name
+        };
+    }
+    return { root: null, name: '' };
+}
+
+/**
+ * Broadcasts workspace change event to all active webviews
+ */
+function broadcastWorkspaceChange() {
+    const ws = getCurrentWorkspace();
+    for (const wv of activeWebviews) {
+        try {
+            wv.postMessage({
+                command: 'workspaceChanged',
+                workspaceRoot: ws.root,
+                workspaceName: ws.name
+            });
+        } catch (e) {}
+    }
+}
+
+/**
+ * Spawns backend server.js process
+ */
+function startServerProcess(context) {
+    if (serverProcess) {
+        try { serverProcess.kill(); } catch {}
+        serverProcess = null;
+    }
+    console.log('[DeadCode Hunter] Launching backend server.js on port 8000...');
+    try {
+        const serverScript = path.join(context.extensionUri.fsPath, 'server.js');
+        if (fs.existsSync(serverScript)) {
+            serverProcess = fork(serverScript, [], {
+                cwd: context.extensionUri.fsPath,
+                silent: true,
+                env: { ...process.env, PORT: '8000' }
+            });
+            serverProcess.stdout?.on('data', (d) => console.log(`[DeadCode Server] ${d}`));
+            serverProcess.stderr?.on('data', (d) => console.error(`[DeadCode Server Err] ${d}`));
+        }
+    } catch (err) {
+        console.error('[DeadCode Hunter] Failed to start backend engine:', err);
+    }
+}
 
 /**
  * Ensures backend server.js is running on port 8000
  */
 function ensureServerRunning(context) {
-    const req = http.get('http://localhost:8000/', (res) => {
-        console.log('[DeadCode Hunter] Backend already active on port 8000');
+    const checkReq = http.get('http://localhost:8000/', (res) => {
+        let body = '';
+        res.on('data', chunk => body += chunk);
+        res.on('end', () => {
+            if (res.statusCode === 200 && body.includes('DeadCode Hunter')) {
+                console.log('[DeadCode Hunter] Backend already active on port 8000');
+            } else {
+                startServerProcess(context);
+            }
+        });
     });
 
-    req.on('error', () => {
-        console.log('[DeadCode Hunter] Launching backend server.js on port 8000...');
-        try {
-            const serverScript = path.join(context.extensionUri.fsPath, 'server.js');
-            if (fs.existsSync(serverScript)) {
-                serverProcess = fork(serverScript, [], {
-                    cwd: context.extensionUri.fsPath,
-                    silent: true,
-                    env: { ...process.env, PORT: '8000' }
-                });
-                serverProcess.stdout?.on('data', (d) => console.log(`[DeadCode Server] ${d}`));
-                serverProcess.stderr?.on('data', (d) => console.error(`[DeadCode Server Err] ${d}`));
-            }
-        } catch (err) {
-            console.error('[DeadCode Hunter] Failed to start backend engine:', err);
-        }
+    checkReq.setTimeout(1500, () => {
+        checkReq.destroy();
+        startServerProcess(context);
+    });
+
+    checkReq.on('error', () => {
+        startServerProcess(context);
     });
 }
 
@@ -42,25 +97,44 @@ function activate(context) {
     // Start background scanning engine if not already running
     ensureServerRunning(context);
 
-    // Handler for messages from webview (open file, copy to clipboard)
-    const handleWebviewMessage = async (message) => {
+    // Watch for workspace folder changes and broadcast to webview
+    context.subscriptions.push(
+        vscode.workspace.onDidChangeWorkspaceFolders(() => {
+            broadcastWorkspaceChange();
+        })
+    );
+
+    // Handler for messages from webview (open file, copy to clipboard, workspace queries)
+    const handleWebviewMessage = async (message, webview) => {
         if (!message) return;
 
-        if (message.command === 'openFile' && message.path) {
+        if (message.command === 'getWorkspace') {
+            const ws = getCurrentWorkspace();
+            if (webview) {
+                webview.postMessage({
+                    command: 'setWorkspace',
+                    workspaceRoot: ws.root,
+                    workspaceName: ws.name
+                });
+            }
+        } else if (message.command === 'openFolder') {
+            vscode.commands.executeCommand('vscode.openFolder');
+        } else if (message.command === 'openFile' && message.path) {
             try {
-                const folders = vscode.workspace.workspaceFolders;
-                const workspaceRoot = (folders && folders.length > 0) ? folders[0].uri.fsPath : context.extensionUri.fsPath;
+                const ws = getCurrentWorkspace();
+                const workspaceRoot = message.targetDir || ws.root;
                 
                 let targetPath = path.isAbsolute(message.path) 
                     ? message.path 
-                    : path.resolve(workspaceRoot, message.path);
+                    : (workspaceRoot ? path.resolve(workspaceRoot, message.path) : null);
 
-                // If not found in workspace, fallback to extension root directory
-                if (!fs.existsSync(targetPath)) {
-                    targetPath = path.resolve(context.extensionUri.fsPath, message.path);
+                if (!targetPath || !fs.existsSync(targetPath)) {
+                    if (fs.existsSync(message.path)) {
+                        targetPath = message.path;
+                    }
                 }
 
-                if (fs.existsSync(targetPath)) {
+                if (targetPath && fs.existsSync(targetPath)) {
                     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(targetPath));
                     await vscode.window.showTextDocument(doc, { preview: false });
                 } else {
@@ -102,8 +176,13 @@ function activate(context) {
             }
         );
 
+        activeWebviews.add(panel.webview);
+        panel.onDidDispose(() => {
+            activeWebviews.delete(panel.webview);
+        });
+
         panel.webview.html = getHtmlForWebview(panel.webview, context.extensionUri);
-        panel.webview.onDidReceiveMessage(handleWebviewMessage);
+        panel.webview.onDidReceiveMessage((msg) => handleWebviewMessage(msg, panel.webview));
     });
 
     context.subscriptions.push(openBesideCommand);
@@ -112,6 +191,7 @@ function activate(context) {
 function getHtmlForWebview(webview, extensionUri) {
     const distPath = path.join(extensionUri.fsPath, 'webview-ui', 'dist');
     const indexPath = path.join(distPath, 'index.html');
+    const ws = getCurrentWorkspace();
 
     if (fs.existsSync(indexPath)) {
         let html = fs.readFileSync(indexPath, 'utf8');
@@ -134,12 +214,16 @@ function getHtmlForWebview(webview, extensionUri) {
         const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval'; img-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource}; connect-src http://localhost:8000 http://127.0.0.1:8000 ws://localhost:* ws://127.0.0.1:*;">`;
         const styleReset = `<style>html, body, #root { margin: 0 !important; padding: 0 !important; width: 100% !important; min-height: 100% !important; background-color: #171717 !important; overflow-x: hidden !important; }</style>`;
 
-        // Inject script for native VS Code API bridge
+        // Inject script for native VS Code API bridge and workspace context
         const scriptInjection = /* html */ `
             <script>
                 try {
                     window.vscodeApi = acquireVsCodeApi();
                 } catch(e) {}
+                window.vscodeWorkspace = {
+                    root: ${JSON.stringify(ws.root)},
+                    name: ${JSON.stringify(ws.name)}
+                };
             </script>
         `;
 
@@ -195,6 +279,11 @@ class DeadCodeSidebarProvider {
     }
 
     resolveWebviewView(webviewView) {
+        activeWebviews.add(webviewView.webview);
+        webviewView.onDidDispose(() => {
+            activeWebviews.delete(webviewView.webview);
+        });
+
         webviewView.webview.options = {
             enableScripts: true,
             localResourceRoots: [
@@ -206,12 +295,13 @@ class DeadCodeSidebarProvider {
         webviewView.webview.html = getHtmlForWebview(webviewView.webview, this._extensionUri);
 
         if (this._messageHandler) {
-            webviewView.webview.onDidReceiveMessage(this._messageHandler);
+            webviewView.webview.onDidReceiveMessage((msg) => this._messageHandler(msg, webviewView.webview));
         }
     }
 }
 
 function deactivate() {
+    activeWebviews.clear();
     if (serverProcess) {
         try {
             serverProcess.kill();

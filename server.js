@@ -579,7 +579,8 @@ const server = http.createServer(async (req, res) => {
         const body = await parseJsonBody(req);
         const targetFile = body?.path;
         if (!targetFile) return sendJson(res, 400, { error: "Missing path" });
-        const fullPath = path.resolve(targetFile);
+        const rootPath = path.resolve(body?.target_dir || '.');
+        const fullPath = path.isAbsolute(targetFile) ? targetFile : path.resolve(rootPath, targetFile);
         if (!fs.existsSync(fullPath)) return sendJson(res, 404, { error: "File not found" });
 
         const isWin = process.platform === 'win32';
@@ -596,7 +597,8 @@ const server = http.createServer(async (req, res) => {
         const itemPath = body?.path;
         if (!itemPath) return sendJson(res, 400, { error: "Missing path to ignore" });
 
-        const ignoreFile = path.resolve('.deadcodeignore');
+        const rootPath = path.resolve(body?.target_dir || '.');
+        const ignoreFile = path.join(rootPath, '.deadcodeignore');
         fs.appendFileSync(ignoreFile, `\n${itemPath}\n`);
         return sendJson(res, 200, { success: true, ignored: itemPath });
     }
@@ -607,7 +609,8 @@ const server = http.createServer(async (req, res) => {
         const itemPath = body?.path;
         if (!itemPath) return sendJson(res, 400, { error: "Missing path to unignore" });
 
-        const ignoreFile = path.resolve('.deadcodeignore');
+        const rootPath = path.resolve(body?.target_dir || '.');
+        const ignoreFile = path.join(rootPath, '.deadcodeignore');
         if (fs.existsSync(ignoreFile)) {
             try {
                 let lines = fs.readFileSync(ignoreFile, 'utf8').split('\n');
@@ -623,10 +626,13 @@ const server = http.createServer(async (req, res) => {
     // 6. Remove dependency
     if (url === '/remove-dependency' && req.method === 'POST') {
         const body = await parseJsonBody(req);
-        const { package_name, package_json_path, use_trash = true } = body;
+        const { package_name, package_json_path, use_trash = true, target_dir } = body;
         if (!package_name) return sendJson(res, 400, { error: "Missing package_name" });
 
-        const absPkgJson = path.resolve(package_json_path || 'package.json');
+        const rootPath = path.resolve(target_dir || '.');
+        const absPkgJson = path.isAbsolute(package_json_path || '')
+            ? package_json_path
+            : path.resolve(rootPath, package_json_path || 'package.json');
         if (!fs.existsSync(absPkgJson)) return sendJson(res, 404, { error: "package.json not found" });
 
         try {

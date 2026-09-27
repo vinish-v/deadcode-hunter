@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import logoImg from './logo.png';
 import { 
   RefreshCw, 
@@ -23,7 +23,8 @@ import {
   RotateCcw,
   Search,
   Clock,
-  Files
+  Files,
+  Folder
 } from 'lucide-react';
 
 export default function App() {
@@ -48,8 +49,37 @@ export default function App() {
   const [useTrash, setUseTrash] = useState(true);
   const [createBackup, setCreateBackup] = useState(true);
 
+  // Active VS Code Workspace
+  const [workspaceInfo, setWorkspaceInfo] = useState(() => {
+    return window.vscodeWorkspace || { root: null, name: '' };
+  });
+
+  // Listen for workspace updates from VS Code extension host
+  useEffect(() => {
+    const handleMessage = (event) => {
+      const msg = event.data;
+      if (msg && (msg.command === 'setWorkspace' || msg.command === 'workspaceChanged')) {
+        setWorkspaceInfo({
+          root: msg.workspaceRoot || null,
+          name: msg.workspaceName || ''
+        });
+        setScanResult(null);
+        setSelectedPaths(new Set());
+      }
+    };
+    window.addEventListener('message', handleMessage);
+    postToVsCode({ command: 'getWorkspace' });
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
+
   // Scan workspace dependency graph
   const triggerScan = async () => {
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || null;
+    if (!targetDir) {
+      setError("No folder opened in VS Code. Please open a project folder to scan.");
+      return;
+    }
+
     setLoading(true);
     setError(null);
     setActionNotice(null);
@@ -57,7 +87,7 @@ export default function App() {
       const response = await fetch('http://localhost:8000/scan', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ target_dir: "." })
+        body: JSON.stringify({ target_dir: targetDir })
       });
 
       if (!response.ok) {
@@ -126,16 +156,17 @@ export default function App() {
   // Open file in VS Code editor via native postMessage bridge + fallback
   const openFileInEditor = async (filePath) => {
     if (!filePath || filePath.startsWith('pkg:')) return;
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || null;
     
     // 1. Native VS Code message bridge (instant, in-editor tab)
-    postToVsCode({ command: 'openFile', path: filePath });
+    postToVsCode({ command: 'openFile', path: filePath, targetDir });
 
     // 2. Also notify backend
     try {
       await fetch('http://localhost:8000/open', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath })
+        body: JSON.stringify({ path: filePath, target_dir: targetDir || "." })
       });
     } catch {}
   };
@@ -143,11 +174,12 @@ export default function App() {
   // Ignore file and add to .deadcodeignore
   const handleIgnoreItem = async (filePath, e) => {
     if (e) e.stopPropagation();
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || ".";
     try {
       const response = await fetch('http://localhost:8000/ignore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath })
+        body: JSON.stringify({ path: filePath, target_dir: targetDir })
       });
       if (response.ok) {
         setActionNotice(`Added ${filePath} to .deadcodeignore`);
@@ -161,11 +193,12 @@ export default function App() {
   // Restore file and remove from .deadcodeignore (Un-ignore)
   const handleUnignoreItem = async (filePath, e) => {
     if (e) e.stopPropagation();
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || ".";
     try {
       const response = await fetch('http://localhost:8000/unignore', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ path: filePath })
+        body: JSON.stringify({ path: filePath, target_dir: targetDir })
       });
       if (response.ok) {
         setActionNotice(`Restored ${filePath} back to active scan`);
@@ -179,6 +212,7 @@ export default function App() {
   // Direct 1-click removal of an unused npm dependency
   const handleRemoveDependency = async (pkg, e) => {
     if (e) e.stopPropagation();
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || ".";
     try {
       const response = await fetch('http://localhost:8000/remove-dependency', {
         method: 'POST',
@@ -186,7 +220,8 @@ export default function App() {
         body: JSON.stringify({
           package_name: pkg.package_name,
           package_json_path: pkg.package_json_path,
-          use_trash: true
+          use_trash: true,
+          target_dir: targetDir
         })
       });
       const data = await response.json();
@@ -204,6 +239,7 @@ export default function App() {
   const handleDeleteSelected = async () => {
     setDeleting(true);
     setError(null);
+    const targetDir = workspaceInfo?.root || window.vscodeWorkspace?.root || ".";
     try {
       const response = await fetch('http://localhost:8000/delete', {
         method: 'POST',
@@ -211,7 +247,8 @@ export default function App() {
         body: JSON.stringify({
           paths: Array.from(selectedPaths),
           use_trash: useTrash,
-          create_backup: scanResult?.has_git ? createBackup : false
+          create_backup: scanResult?.has_git ? createBackup : false,
+          target_dir: targetDir
         })
       });
 
@@ -462,9 +499,16 @@ export default function App() {
             alt="DeadCode Hunter Logo" 
             className="w-5 h-5 rounded-md object-cover border border-zinc-700/80 shadow-xs shrink-0" 
           />
-          <div className="flex items-baseline space-x-1.5">
-            <span className="font-semibold text-sm text-[#f4f4f4] tracking-tight">DeadCode Hunter</span>
-            <span className="text-[11px] text-zinc-500 font-normal">by Vinish</span>
+          <div className="flex flex-col">
+            <div className="flex items-baseline space-x-1.5">
+              <span className="font-semibold text-sm text-[#f4f4f4] tracking-tight">DeadCode Hunter</span>
+              <span className="text-[11px] text-zinc-500 font-normal">by Vinish</span>
+            </div>
+            {workspaceInfo?.name && (
+              <span className="text-[10px] text-zinc-400 font-mono truncate max-w-[140px]" title={workspaceInfo.root}>
+                {workspaceInfo.name}
+              </span>
+            )}
           </div>
         </div>
 
@@ -543,8 +587,27 @@ export default function App() {
         </div>
       )}
 
-      {/* Initial Empty State */}
-      {!scanResult && !loading && !error && (
+      {/* No Workspace Opened State */}
+      {!workspaceInfo?.root && !loading && !error && (
+        <div className="my-auto flex flex-col items-center justify-center text-center py-16 px-4">
+          <div className="w-10 h-10 rounded-xl bg-[#212121] border border-[#2f2f2f] flex items-center justify-center mb-3 text-zinc-400">
+            <Folder className="w-5 h-5 text-zinc-300 stroke-[1.5]" />
+          </div>
+          <h2 className="text-sm font-medium text-[#f4f4f4] mb-1">No Folder Open</h2>
+          <p className="text-xs text-[#8e8e8e] max-w-[260px] leading-relaxed mb-4">
+            Open a project folder or workspace in VS Code to hunt for dead code, unreferenced media, and ghost dependencies.
+          </p>
+          <button
+            onClick={() => postToVsCode({ command: 'openFolder' })}
+            className="text-xs text-white bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded-lg transition font-medium"
+          >
+            Open Folder in VS Code
+          </button>
+        </div>
+      )}
+
+      {/* Initial Empty State with Workspace */}
+      {workspaceInfo?.root && !scanResult && !loading && !error && (
         <div className="my-auto flex flex-col items-center justify-center text-center py-16 px-4">
           <div className="w-10 h-10 rounded-xl bg-[#212121] border border-[#2f2f2f] flex items-center justify-center mb-3 text-zinc-400">
             <Trash2 className="w-5 h-5 text-zinc-300 stroke-[1.5]" />
@@ -557,7 +620,7 @@ export default function App() {
             onClick={triggerScan}
             className="mt-5 text-xs text-[#d4d4d4] bg-[#212121] hover:bg-[#2b2b2b] border border-[#333333] px-4 py-2 rounded-full transition"
           >
-            Start Workspace Scan
+            Start Workspace Scan {workspaceInfo?.name ? `(${workspaceInfo.name})` : ''}
           </button>
         </div>
       )}
