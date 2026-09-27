@@ -1,7 +1,6 @@
 # DeadCode Hunter by Vinish 🎯
 
 <div align="center">
-  <img src="resources/icon.png" width="128" height="128" alt="DeadCode Hunter Logo" />
   <p><strong>Hunt orphan code, unreferenced media, and ghost npm dependencies with zero-risk safe deletion.</strong></p>
 </div>
 
