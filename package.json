@@ -2,7 +2,7 @@
   "name": "deadcode-hunter",
   "displayName": "DeadCode Hunter by Vinish",
   "description": "Safely hunt and clean orphan JS/TS code, unreferenced media, and ghost npm dependencies.",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "publisher": "vinish",
   "icon": "resources/icon.png",
   "license": "MIT",
@@ -20,6 +20,7 @@
     "ui:build": "cd webview-ui && npm run build"
   },
   "activationEvents": [
+    "onStartupFinished",
     "onCommand:deadcode-hunter.openBeside",
     "onView:deadcode-hunter.sidebarView",
     "onView:deadcode-hunter.explorerView"
