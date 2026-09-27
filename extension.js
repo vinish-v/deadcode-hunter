@@ -97,7 +97,7 @@ function activate(context) {
                 retainContextWhenHidden: true,
                 localResourceRoots: [
                     context.extensionUri,
-                    vscode.Uri.file(path.join(context.extensionUri.fsPath, 'webview-ui', 'dist'))
+                    vscode.Uri.joinPath(context.extensionUri, 'webview-ui', 'dist')
                 ]
             }
         );
@@ -116,16 +116,22 @@ function getHtmlForWebview(webview, extensionUri) {
     if (fs.existsSync(indexPath)) {
         let html = fs.readFileSync(indexPath, 'utf8');
 
-        // Rewrite relative asset paths to VS Code webview URIs
-        html = html.replace(/(href|src)="\/?(assets\/[^"]+)"/g, (match, attr, rel) => {
-            const fileUri = vscode.Uri.file(path.join(distPath, rel));
+        const distUri = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist'));
+
+        // Rewrite relative asset paths to VS Code webview URIs (handles ./assets/..., /assets/..., assets/...)
+        html = html.replace(/(href|src)="(?:\.\/|\/)?(assets\/[^"]+)"/g, (match, attr, rel) => {
+            const fileUri = vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist', rel);
             return `${attr}="${webview.asWebviewUri(fileUri)}"`;
         });
 
-        html = html.replace(/src="\/?(logo\.png)"/g, (match, rel) => {
-            const fileUri = vscode.Uri.file(path.join(distPath, rel));
-            return `src="${webview.asWebviewUri(fileUri)}"`;
+        html = html.replace(/(href|src)="(?:\.\/|\/)?(logo\.png)"/g, (match, attr, rel) => {
+            const fileUri = vscode.Uri.joinPath(extensionUri, 'webview-ui', 'dist', rel);
+            return `${attr}="${webview.asWebviewUri(fileUri)}"`;
         });
+
+        // Inject base href and CSP to safely load scripts and fetch localhost backend engine
+        const baseHref = `<base href="${distUri}/">`;
+        const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src ${webview.cspSource} 'unsafe-inline' 'unsafe-eval'; img-src ${webview.cspSource} https: data: blob:; font-src ${webview.cspSource}; connect-src http://localhost:8000 http://127.0.0.1:8000 ws://localhost:* ws://127.0.0.1:*;">`;
 
         // Inject script for native VS Code API bridge
         const scriptInjection = /* html */ `
@@ -135,7 +141,9 @@ function getHtmlForWebview(webview, extensionUri) {
                 } catch(e) {}
             </script>
         `;
-        html = html.replace('</head>', `${scriptInjection}</head>`);
+
+        html = html.replace('<head>', `<head>\n    ${baseHref}\n    ${cspMeta}`);
+        html = html.replace('</head>', `    ${scriptInjection}\n</head>`);
         return html;
     }
 
@@ -190,7 +198,7 @@ class DeadCodeSidebarProvider {
             enableScripts: true,
             localResourceRoots: [
                 this._extensionUri,
-                vscode.Uri.file(path.join(this._extensionUri.fsPath, 'webview-ui', 'dist'))
+                vscode.Uri.joinPath(this._extensionUri, 'webview-ui', 'dist')
             ]
         };
 
