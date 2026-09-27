@@ -185,7 +185,26 @@ function activate(context) {
         panel.webview.onDidReceiveMessage((msg) => handleWebviewMessage(msg, panel.webview));
     });
 
-    context.subscriptions.push(openBesideCommand);
+    // 3. Register Command: Focus Sidebar
+    const focusCommand = vscode.commands.registerCommand('deadcode-hunter.focus', async () => {
+        try {
+            await vscode.commands.executeCommand('workbench.view.extension.deadcode-hunter-container');
+        } catch (e) {
+            await vscode.commands.executeCommand('deadcode-hunter.sidebarView.focus');
+        }
+    });
+
+    // 4. Register Command: Reset View Locations
+    const resetViewCommand = vscode.commands.registerCommand('deadcode-hunter.resetView', async () => {
+        try {
+            await vscode.commands.executeCommand('workbench.action.resetViewLocations');
+            vscode.window.showInformationMessage('DeadCode Hunter view locations reset to default sidebar.');
+        } catch (e) {
+            vscode.window.showErrorMessage(`Unable to reset view: ${e.message}`);
+        }
+    });
+
+    context.subscriptions.push(openBesideCommand, focusCommand, resetViewCommand);
 }
 
 function getHtmlForWebview(webview, extensionUri) {

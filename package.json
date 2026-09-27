@@ -2,7 +2,7 @@
   "name": "deadcode-hunter",
   "displayName": "DeadCode Hunter by Vinish",
   "description": "Safely hunt and clean orphan JS/TS code, unreferenced media, and ghost npm dependencies.",
-  "version": "1.0.7",
+  "version": "1.0.8",
   "publisher": "vinish",
   "icon": "resources/icon.png",
   "license": "MIT",
@@ -28,6 +28,8 @@
     "*",
     "onStartupFinished",
     "onCommand:deadcode-hunter.openBeside",
+    "onCommand:deadcode-hunter.focus",
+    "onCommand:deadcode-hunter.resetView",
     "onView:deadcode-hunter.sidebarView",
     "onView:deadcode-hunter.explorerView"
   ],
@@ -37,6 +39,16 @@
         "command": "deadcode-hunter.openBeside",
         "title": "DeadCode Hunter by Vinish: Open on Right Side",
         "icon": "$(trash)"
+      },
+      {
+        "command": "deadcode-hunter.focus",
+        "title": "DeadCode Hunter by Vinish: Focus Sidebar",
+        "icon": "$(trash)"
+      },
+      {
+        "command": "deadcode-hunter.resetView",
+        "title": "DeadCode Hunter by Vinish: Reset Sidebar View Location",
+        "icon": "$(refresh)"
       }
     ],
     "menus": {
